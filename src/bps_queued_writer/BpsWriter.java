@@ -189,13 +189,11 @@ public class BpsWriter implements QueuedWriter
 					checkAndAddHunk(new BpsHunkSelfRead(selfReadBeingCreatedName + hunksCreated++ + "_selfRead", 
 									selfReadBeingCreatedDestIndex + lastMatchSpot, 
 									Arrays.copyOfRange(
-											sourceBytes, 
-											selfReadBeingCreatedDestIndex + lastMatchSpot,
-											selfReadBeingCreatedDestIndex + hunkSpot)));
+											hunkDesiredBytes, lastMatchSpot, hunkSpot)));
 				}
 				
 				// Now update the last match spot and write from the current spot to there
-				lastMatchSpot = hunkSpot + bestMatch.size(); ;
+				lastMatchSpot = hunkSpot + bestMatch.size();
 				checkAndAddHunk(new BpsHunkCopy(selfReadBeingCreatedName + hunksCreated++ + "_copy",
 								selfReadBeingCreatedDestIndex + hunkSpot,
 								BpsHunkCopyType.SOURCE_COPY, bestMatch.size(), bestMatch.getStart()));
@@ -213,9 +211,7 @@ public class BpsWriter implements QueuedWriter
 			checkAndAddHunk(new BpsHunkSelfRead(selfReadBeingCreatedName + hunksCreated++ + "_selfRead", 
 					selfReadBeingCreatedDestIndex + lastMatchSpot,
 					Arrays.copyOfRange(
-							sourceBytes,
-							selfReadBeingCreatedDestIndex + lastMatchSpot, 
-							selfReadBeingCreatedDestIndex + hunkSpot)));
+							hunkDesiredBytes, lastMatchSpot, hunkSpot)));
 		}
 	}
 	
@@ -285,13 +281,6 @@ public class BpsWriter implements QueuedWriter
 	
 	public void fillHunkSpacesWithBlanksOrSourceReads(int targetLength, int sourceLength, List<AddressRange> toBlank)
 	{
-		// Temp
-//		newCopyHunk(358127, BpsHunkCopyType.SOURCE_COPY, 2, 358127 + 2);
-//		newCopyHunk(358127+3, BpsHunkCopyType.SOURCE_COPY, 2, 358127+4);
-//		newCopyHunk(359098, BpsHunkCopyType.SOURCE_COPY, 3, 358127);
-//		newCopyHunk(359289, BpsHunkCopyType.TARGET_COPY, 5, 358127);
-//		newCopyHunk(360090, BpsHunkCopyType.TARGET_COPY, 4, 360272); // not working ? Can't copy ahead - make check for this
-//		newCopyHunk(360090, BpsHunkCopyType.TARGET_COPY, 5, 358994);
 		queueBlankedBlocks(toBlank);
 		fillHunkSpacesWithBlanksOrSourceReads(targetLength, sourceLength);
 	}
