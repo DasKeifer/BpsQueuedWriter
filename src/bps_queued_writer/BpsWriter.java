@@ -96,17 +96,12 @@ public class BpsWriter implements QueuedWriter
 	@Override
 	public void startNewBlock(int segmentStartAddress, String segmentName, List<AddressRange> reuseHints)
 	{	
-		// TODO: Optimization Use hints to reduce patch size. For now its fine to just ignore
 		startNewBlock(segmentStartAddress, segmentName);
 		selfReadBeingCreatedReuse = new ArrayList<>();
 		if (reuseHints != null)
 		{
 			selfReadBeingCreatedReuse.addAll(reuseHints);
 		}
-		
-		// Create a self read patch but store the existing start address and length? Then we
-		// can blank the previous spot if it was moved or do a source read or source copy
-		// if its unchanged?
 	}
 
 	@Override
@@ -121,24 +116,36 @@ public class BpsWriter implements QueuedWriter
 		checkForNextHunkOverwrite(hunk);
 		hunks.add(hunk);
 	}
-
+	
+	public void newSourceRead(int readFromIndex, int size)  
+	{
+		BpsHunkSourceRead sourceReadHunk = new BpsHunkSourceRead(readFromIndex, size);
+		newHunkCommon(sourceReadHunk);
+	}
+	
+	public void newSourceRead(String name, int readFromIndex, int size)  
+	{
+		BpsHunkSourceRead sourceReadHunk = new BpsHunkSourceRead(name, readFromIndex, size);
+		newHunkCommon(sourceReadHunk);
+	}
+	
 	public void newCopyHunk(int destinationIndex, BpsHunkCopyType type, int size, int copyFromStartIndex)  
 	{
 		BpsHunkCopy copyHunk = new BpsHunkCopy(destinationIndex, type, size, copyFromStartIndex);
-		newCopyHunkCommon(copyHunk);
+		newHunkCommon(copyHunk);
 	}
 	
 	public void newCopyHunk(String name, int destinationIndex, BpsHunkCopyType type, int size, int copyFromStartIndex)  
 	{
 		BpsHunkCopy copyHunk = new BpsHunkCopy(name, destinationIndex, type, size, copyFromStartIndex);
-		newCopyHunkCommon(copyHunk);
+		newHunkCommon(copyHunk);
 	}
 	
-	private void newCopyHunkCommon(BpsHunkCopy copyHunk)  
+	private void newHunkCommon(BpsHunk hunk)  
 	{		
 		// Check that this hunk doesn't overwrite any others		
 		finalizeSelfReadBeingCreated();
-		checkAndAddHunk(copyHunk);
+		checkAndAddHunk(hunk);
 	}
 	
 	private void finalizeSelfReadBeingCreated()
@@ -165,7 +172,7 @@ public class BpsWriter implements QueuedWriter
 	}
 	
 	private void createHunksBasedOnHints()
-	{
+	{		
 		byte[] hunkDesiredBytes = selfReadBeingCreated.toByteArray();
 		// Until we have processed the entire hunk
 		int hunksCreated = 0;
@@ -180,7 +187,8 @@ public class BpsWriter implements QueuedWriter
 			AddressRange bestMatch = getBestMatch(hunkDesiredBytes, hunkSpot);
 			
 			// If its worth copying (right now at least 4 length)
-			if (bestMatch.size() > 3) // TODO: Make option
+			if (bestMatch.size() > 3 || // TODO: Make option
+					hunkSpot + bestMatch.size() == hunkDesiredBytes.length) // Matches to the end
 			{
 				// Write the self copy if needed
 				if (lastMatchSpot != hunkSpot)
@@ -279,14 +287,10 @@ public class BpsWriter implements QueuedWriter
 		}
 	}
 	
-	public void fillHunkSpacesWithBlanksOrSourceReads(int targetLength, int sourceLength, List<AddressRange> toBlank)
+	private void fillHunkSpacesWithBlanksOrSourceReads(int targetLength, int sourceLength, List<AddressRange> toBlank)
 	{
 		queueBlankedBlocks(toBlank);
-		fillHunkSpacesWithBlanksOrSourceReads(targetLength, sourceLength);
-	}
-
-	public void fillHunkSpacesWithBlanksOrSourceReads(int targetLength, int sourceLength)
-	{
+		
 		// Ensure any pending ones are finalized prior to filling gaps
 		finalizeSelfReadBeingCreated();
 		
@@ -392,11 +396,28 @@ public class BpsWriter implements QueuedWriter
 		}
 	}
 	
-	public void packHunks()
+	private void optimizeAndPackHunks()
 	{
 		TreeSet<BpsHunk> newHunks = new TreeSet<>();
-		BpsHunk prevHunk = hunks.pollFirst();
 		
+		// Convert source copies with the same dest & source to sourceReads
+		Iterator<BpsHunk> itr = hunks.iterator();
+		while (itr.hasNext())
+		{
+			BpsHunk hunk = itr.next();
+			if (hunk.getType() == BpsHunkType.SOURCE_COPY &&
+					((BpsHunkCopy)hunk).getCopyFromIndex() ==
+						((BpsHunkCopy)hunk).getDestinationIndex())
+			{
+				newHunks.add(new BpsHunkSourceRead(hunk.getName() + "_AsSourceCopy", ((BpsHunkCopy)hunk).getCopyFromIndex(), hunk.getLength()));
+				itr.remove();
+			}
+		}
+		hunks.addAll(newHunks);
+		newHunks.clear();
+		
+		// Now try to combine any we can
+		BpsHunk prevHunk = hunks.pollFirst();
 		if (prevHunk != null)
 		{
 			BpsHunk nextHunk = null;
@@ -428,12 +449,15 @@ public class BpsWriter implements QueuedWriter
 	}
 	
 	// TODO: Minor Take metadata?	
-	public void writeBps(File file)
+	public void writeBps(File file, List<AddressRange> toBlank)
 	{
 		// Ensure any pending ones are finalized prior to writing
 		finalizeSelfReadBeingCreated();
+		optimizeAndPackHunks();
 		
-		// TODO: Try to combine hunks?
+		// We aren't making the rom longer so we pass the same length twice
+		fillHunkSpacesWithBlanksOrSourceReads(sourceBytes.length, sourceBytes.length, toBlank);
+		
 		// TODO: Overlap & gap (target final length) checking?
 		
 		// Set the offsets for writing
@@ -479,9 +503,9 @@ public class BpsWriter implements QueuedWriter
 			// then write that
 			byte[] bpsBytes = bpsOs.toByteArray();
 			// TODO: BPS temp
-			fos.write(targetBytes);
-//			fos.write(bpsBytes);
-//			fos.write(ByteUtils.toLittleEndianBytes(ByteUtils.computeCrc32(bpsBytes), 4));
+//			fos.write(targetBytes);
+			fos.write(bpsBytes);
+			fos.write(ByteUtils.toLittleEndianBytes(ByteUtils.computeCrc32(bpsBytes), 4));
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
