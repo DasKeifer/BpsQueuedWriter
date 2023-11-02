@@ -86,8 +86,9 @@ public abstract class BpsHunk implements Comparable<BpsHunk>, Cloneable
 	protected void writeHunkHeader(ByteArrayOutputStream bpsOs) throws IOException
 	{
 	    // We know the length is at least 1
-		long lengthAndType = ((getLength() - 1) << 2) + getType().getValue();
-		bpsOs.write(ByteUtils.sevenBitEncode(lengthAndType));
+		long hunkLength = (((long)getLength() & 0xFFFF) - 1) << 2;
+		long hunkValue = ((long) getType().getValue()) & 0xFF;
+		bpsOs.write(ByteUtils.sevenBitEncode(hunkLength + hunkValue));
 	}
 
 	public String getName()
