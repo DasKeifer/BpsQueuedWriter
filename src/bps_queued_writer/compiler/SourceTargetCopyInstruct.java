@@ -1,8 +1,10 @@
-package bps_queued_writer;
+package bps_queued_writer.compiler;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Map;
 
+import bps_queued_writer.BpsWriter;
 import bps_queued_writer.BpsWriter.BpsHunkCopyType;
 import compiler.FixedLengthInstruct;
 import gbc_framework.QueuedWriter;
@@ -57,6 +59,18 @@ public class SourceTargetCopyInstruct extends FixedLengthInstruct
 		{
 			throw new IllegalArgumentException(supportedArgs + "given: " + Arrays.toString(args) + " and encountered error: "+ iae.getMessage());
 		}
+	}
+
+	@Override
+	public boolean containsPlaceholder() 
+	{
+		return false;
+	}
+
+	@Override
+	public void replacePlaceholderIfPresent(Map<String, String> placeholderToArgs) 
+	{
+		// Nothing to do
 	}
 	
 	@Override
